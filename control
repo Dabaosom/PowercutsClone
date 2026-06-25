@@ -1,0 +1,9 @@
+Package: com.yourname.powercutsclone
+Name: PowercutsClone
+Depends: mobilesubstrate
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: iOS 17 Shortcuts Actions - Custom actions for Shortcuts app
+Maintainer: Your Name
+Author: Your Name
+Section: Tweaks

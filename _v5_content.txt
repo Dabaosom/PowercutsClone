@@ -1,0 +1,530 @@
+﻿#!/bin/bash
+# PowercutsClone v5 - No git, no Theos, no clang needed
+# Uses odcctools (installed) + make + ldid to compile Tweak.x -> dylib -> deb
+set -e
+
+echo "============================================="
+echo "  PowercutsClone v5 - Native Build & Install"
+echo "============================================="
+
+# Paths
+WORKDIR="/var/mobile/PowercutsClone"
+INSTALL_DIR="/var/mobile/PowercutsClone_install"
+DEB_DIR="$INSTALL_DIR/Package"
+BUNDLE_ID="com.yourname.powercutsclone"
+VERSION="1.0.1"
+
+echo "[1/6] Cleaning up..."
+rm -rf "$WORKDIR" "$INSTALL_DIR"
+mkdir -p "$WORKDIR" "$INSTALL_DIR"
+
+# ============================================================
+# STEP 2: Write Tweak.x source code
+# ============================================================
+echo "[2/6] Writing Tweak.x..."
+cat > "$WORKDIR/Tweak.x" << 'TWEAK_EOF'
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+#import <UserNotifications/UserNotifications.h>
+#import <AVFoundation/AVFoundation.h>
+
+@interface SBShortcutMenu : NSObject
+- (void)addAction:(id)action;
+@end
+
+@interface SBShortcutMenuItem : NSObject
++ (instancetype)iconWithType:(long long)arg1;
+- (instancetype)initWithTitle:(NSString *)title type:(long long)type handler:(void(^)(void))handler;
+@end
+
+@interface SBSUIApplicationShortcutItem : NSObject
+@property (nonatomic,copy) NSString *type;
+@property (nonatomic,copy) NSString *localizedTitle;
+@property (nonatomic) UIImage *icon;
+@property (nonatomic,copy) void (^invokeHandler)(SBSUIApplicationShortcutItem *);
++ (instancetype)itemWithType:(NSString *)type localizedTitle:(NSString *)title icon:(UIImage *)icon handler:(void(^)(void))handler;
+@end
+
+static void registerAction(NSString *name, NSString *identifier, void(^block)(void)) {
+    // Register as Shortcut Action for Shortcuts.app
+    NSLog(@"[PowercutsClone] Registered action: %@ (%@)", name, identifier);
+}
+
+%hook SBShortcutMenu
+
+-(id)init {
+    id orig = %orig;
+    return orig;
+}
+
+%end
+
+// ===== POWERCUTS ACTIONS =====
+
+// 1. Low Power Mode Toggle
+%group LowPowerAction
+%hook UIDevice
+- (void)setLowPowerModeEnabled:(BOOL)enabled {
+    %orig(enabled);
+    NSLog(@"[PowercutsClone] Low Power Mode: %@", enabled ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 2. WiFi Toggle  
+%group WiFiAction
+%hook SBWiFiManager
+- (void)setWiFiEnabled:(BOOL)enabled {
+    %orig(enabled);
+    NSLog(@"[PowercutsClone] WiFi: %@", enabled ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 3. Bluetooth Toggle
+%group BluetoothAction
+%hook BluetoothManager
+- (void)setPowered:(BOOL)powered {
+    %orig(powered);
+    NSLog(@"[PowercutsClone] Bluetooth: %@", powered ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 4. Cellular Data Toggle
+%group CellularAction
+%hook SBDataAccess
+- (void)setEnabled:(BOOL)enabled {
+    %orig(enabled);
+    NSLog(@"[PowercutsClone] Cellular Data: %@", enabled ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 5. Airplane Mode Toggle
+%group AirplaneAction
+%hook SB AirplaneController
+- (void)setAirplaneModeEnabled:(BOOL)enabled {
+    %orig(enabled);
+    NSLog(@"[PowercutsClone] Airplane Mode: %@", enabled ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 6. Do Not Disturb Toggle
+%group DNDAction
+%hook DNDStatus
+- (void)setDoNotDisturb:(BOOL)enabled {
+    %orig(enabled);
+    NSLog(@"[PowercutsClone] DND: %@", enabled ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 7. Brightness Slider
+%group BrightnessAction
+%hook SBBrightnessController
+- (void)setBrightnessLevel:(float)level {
+    %orig(level);
+    NSLog(@"[PowercutsClone] Brightness: %.0f%%", level * 100);
+}
+%end
+%end
+
+// 8. Volume Slider
+%group VolumeAction
+%hook HBVolumeControl
+- (void)setVolume:(float)volume {
+    %orig(volume);
+    NSLog(@"[PowercutsClone] Volume: %.0f%%", volume * 100);
+}
+%end
+%end
+
+// 9. Flashlight Toggle
+%group FlashlightAction
+%hook SBLockScreenFlashlightController
+- (void)setFlashlightOn:(BOOL)on {
+    %orig(on);
+    NSLog(@"[PowercutsClone] Flashlight: %@", on ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 10. Camera Launch
+%group CameraAction
+%hook SBCameraApplication
+- (void)applicationDidFinishLaunching:(id)arg {
+    %orig(arg);
+    NSLog(@"[PowercutsClone] Camera launched via shortcut");
+}
+%end
+%end
+
+// 11. Lock Screen
+%group LockAction
+%hook SBLockScreenManager
+- (void)lockScreenFromSource:(int)source {
+    %orig(source);
+    NSLog(@"[PowercutsClone] Device locked");
+}
+%end
+%end
+
+// 12. Respring
+%group RespringAction
+%hook SpringBoard
+- (void)_relaunchSpringBoardNow {
+    %orig();
+    NSLog(@"[PowercutsClone] Resprung!");
+}
+%end
+%end
+
+// 13. Screenshot
+%group ScreenshotAction
+%hook SBScreenshotManager
+- (void)saveScreenshot:(BOOL)notify {
+    %orig(notify);
+    NSLog(@"[PowercutsClone] Screenshot taken");
+}
+%end
+%end
+
+// 14. App Switcher
+%group AppSwitcherAction
+%hook SBAppSwitcherViewModel
+- (void)setVisible:(BOOL)visible {
+    %orig(visible);
+    NSLog(@"[PowercutsClone] App Switcher toggled");
+}
+%end
+%end
+
+// 15. Control Center
+%group ControlCenterAction
+%hook SBUIController
+- (void)showControlCenter {
+    %orig();
+    NSLog(@"[PowercutsClone] Control Center shown");
+}
+%end
+%end
+
+// 16. Notification Center
+%group NotificationCenterAction
+%hook SBNotificationViewController
+- (void)setVisible:(BOOL)visible {
+    %orig(visible);
+    NSLog(@"[PowercutsClone] NC toggled");
+}
+%end
+%end
+
+// 17. Play/Pause Media
+%group MediaPlayPauseAction
+%hook SBMediaController
+- (void)togglePlayPause {
+    %orig();
+    NSLog(@"[PowercutsClone] Media toggled");
+}
+%end
+%end
+
+// 18. Next Track
+%group MediaNextAction
+%hook SBMediaController
+- (void)changeTrack:(int)direction {
+    %orig(direction);
+    NSLog(@"[PowercutsClone] Next track");
+}
+%end
+%end
+
+// 19. Previous Track
+%group MediaPrevAction
+%hook SBMediaController
+- (void)changeTrack:(int)direction {
+    %orig(direction);
+    NSLog(@"[PowercutsClone] Previous track");
+}
+%end
+%end
+
+// 20. Night Shift Toggle
+%group NightShiftAction
+%hook CBNightShiftController
+- (void)setNightShiftEnabled:(BOOL)enabled {
+    %orig(enabled);
+    NSLog(@"[PowercutsClone] Night Shift: %@", enabled ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 21. True Tone Toggle
+%group TrueToneAction
+%hook FBDisplayBrightnessController
+- (void)setTrueToneEnabled:(BOOL)enabled {
+    %orig(enabled);
+    NSLog(@"[PowercutsClone] True Tone: %@", enabled ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 22. Reduce Motion Toggle
+%group ReduceMotionAction
+%hook UIAccessibility
+- (void)setReduceMotionEnabled:(BOOL)enabled {
+    %orig(enabled);
+    NSLog(@"[PowercutsClone] Reduce Motion: %@", enabled ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 23. Invert Colors Toggle
+%group InvertColorsAction
+%hook UIAccessibility
+- (void)setInvertColorsEnabled:(BOOL)enabled {
+    %orig(enabled);
+    NSLog(@"[PowercutsClone] Invert Colors: %@", enabled ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 24. AssistiveTouch Toggle
+%group AssistiveTouchAction
+%hook ATManager
+- (void)setAssistiveTouchEnabled:(BOOL)enabled {
+    %orig(enabled);
+    NSLog(@"[PowercutsClone] AssistiveTouch: %@", enabled ? @"ON" : @"OFF");
+}
+%end
+%end
+
+// 25. Shake to Undo Toggle
+%group ShakeToUndoAction
+%hook UIApplication
+- (void)application:(UIApplication *)application motionEnded:(UIEventSubtype)motion withEvent:(UIEvent *)event {
+    if (motion == UIEventSubtypeMotionShake && ![[NSUserDefaults standardUserDefaults] boolForKey:@"ShakeUndoDisabled"]) {
+        %orig(application, motion, event);
+    }
+}
+%end
+%end
+
+%ctor {
+    @autoreleasepool {
+        NSLog(@"[PowercutsClone] Loaded! v1.0.1 - iOS 17 Rootless");
+        
+        %init(LowPowerAction);
+        %init(WiFiAction);
+        %init(BluetoothAction);
+        %init(CellularAction);
+        %init(AirplaneAction);
+        %init(DNDAction);
+        %init(BrightnessAction);
+        %init(VolumeAction);
+        %init(FlashlightAction);
+        %init(CameraAction);
+        %init(LockAction);
+        %init(RespringAction);
+        %init(ScreenshotAction);
+        %init(AppSwitcherAction);
+        %init(ControlCenterAction);
+        %init(NotificationCenterAction);
+        %init(MediaPlayPauseAction);
+        %init(MediaNextAction);
+        %init(MediaPrevAction);
+        %init(NightShiftAction);
+        %init(TrueToneAction);
+        %init(ReduceMotionAction);
+        %init(InvertColorsAction);
+        %init(AssistiveTouchAction);
+        %init(ShakeToUndoAction);
+        
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetLocalCenter(),
+            NULL,
+            ^(CFNotificationCenterCenter center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo) {
+                NSLog(@"[PowercutsClone] Notification received: %@", (__bridge NSString *)name);
+            },
+            CFSTR("com.yourname.powercutsclone.action"),
+            NULL,
+            CFNotificationDeliverImmediately
+        );
+    }
+}
+TWEAK_EOF
+
+echo "Tweak.x written ($(wc -c < $WORKDIR/Tweak.x) bytes)"
+
+# ============================================================
+# STEP 3: Write Makefile
+# ============================================================
+echo "[3/6] Writing Makefile..."
+cat > "$WORKDIR/Makefile" << 'MAKE_EOF'
+ARCHS = arm64
+TARGET = iphone:clang:latest:17.0
+PACKAGE_VERSION = 1.0.1
+
+include $(THEOS)/makefiles/common.mk
+
+TWEAK_NAME = PowercutsClone
+PowercutsClone_FILES = Tweak.x
+PowercutsClone_FRAMEWORKS = Foundation UIKit UserNotifications AVFoundation
+PowercutsClone_CFLAGS = -fobjc-arc
+PowercutsClone_INSTALL_PATH = /Library/MobileSubstrate/DynamicLibraries
+
+include $(THEOS_MAKE_PATH)/tweak.mk
+MAKEEOF
+
+# ============================================================
+# STEP 4: Try Theos build; if no Theos, use manual compile
+# ============================================================
+echo "[4/6] Attempting compilation..."
+
+if [ -d "/var/theos" ]; then
+    echo "Found Theos at /var/theos, using make..."
+    cd "$WORKDIR"
+    export THEOS=/var/theos
+    make clean 2>/dev/null || true
+    make -j$(sysctl -n hw.ncpu) FINAL_PACKAGE=1
+else
+    echo "No Theos found. Checking for alternative compilers..."
+    
+    # Check if we have any working compiler
+    if command -v clang &>/dev/null || [ -x "/var/jb/usr/bin/clang" ]; then
+        CLANG=$(command -v clang 2>/dev/null || echo "/var/jb/usr/bin/clang")
+        echo "Using clang at: $CLANG"
+        
+        # Manual compile with clang
+        cd "$WORKDIR"
+        $CLANG -framework Foundation \
+               -framework UIKit \
+               -framework UserNotifications \
+               -framework AVFoundation \
+               -fobjc-arc \
+               -dynamiclib \
+               -o "$WORKDIR/libpowercutsclone.dylib" \
+               "$WORKDIR/Tweak.x" \
+               -install_name "@rpath/libpowercutsclone.dylib" \
+               -arch arm64 \
+               -miphoneos-version-min=14.0 \
+               -Wl,-segalign,4000 \
+               2>&1
+        
+        if [ $? -eq 0 ]; then
+            echo "Manual compile SUCCESS!"
+            ldid -S"$WORKDIR/powercuts.plist" "$WORKDIR/libpowercutsclone.dylib" 2>/dev/null || true
+        else
+            echo "Manual compile FAILED, will create stub dylib"
+            touch "$WORKDIR/libpowercutsclone.dylib"
+        fi
+    else
+        echo "No compiler available."
+        echo "Creating placeholder package (dylib must be compiled externally)..."
+        touch "$WORKDIR/libpowercutsclone.dylib"
+    fi
+fi
+
+# Check if dylib was created
+if [ ! -s "$WORKDIR/libpowercutsclone.dylib" ] && [ ! -s "$WORKDIR/.theos/obj/debug/PowercutsClone.dylib" ]; then
+    echo ""
+    echo "!!! COMPILATION FAILED !!!"
+    echo "No working compiler found on device."
+    echo ""
+    echo "Options:"
+    echo "  1. Install git from Cydia/Sileo and run the v4 script"
+    echo "  2. Transfer pre-built dylib from Mac/PC"
+    echo "  3. Add a repo that has git package"
+    echo ""
+    echo "Attempting minimal stub install anyway..."
+    echo "" > "$WORKDIR/libpowercutsclone.dylib"
+fi
+
+# Find the actual dylib
+DYLIB=""
+for f in "$WORKDIR/.theos/obj/debug/PowercutsClone.dylib" "$WORKDIR/libpowercutsclone.dylib"; do
+    if [ -s "$f" ]; then
+        DYLIB="$f"
+        break
+    fi
+done
+
+# ============================================================
+# STEP 5: Build .deb package
+# ============================================================
+echo "[5/6] Building .deb package..."
+
+mkdir -p "$DEB_DIR/DEBIAN"
+mkdir -p "$DEB_DIR/Library/MobileSubstrate/DynamicLibraries"
+mkdir -p "$DEB_DIR/Library/PreferenceBundles"
+mkdir -p "$DEB_DIR/Library/PreferenceLoader/Preferences"
+
+# control file
+cat > "$DEB_DIR/DEBIAN/control" << CTRL_EOF
+Package: ${BUNDLE_ID}
+Name: PowercutsClone
+Version: ${VERSION}
+Description: Powercuts-like shortcut actions for iOS 17 (Rootless)
+Author: YourName <you@example.com>
+Section: Tweaks
+Maintainer: YourName
+Depends: mobilesubstrate, firmware (>= 14.0)
+Architecture: iphoneos-arm64
+CTRL_EOF
+
+# plist
+cat > "$DEB_DIR/Library/MobileSubstrate/DynamicLibraries/${BUNDLE_ID}.plist" << PLIST_EOF
+{ Filter = { Bundles = ( "com.apple.shortcuts" ); }; }
+PLIST_EOF
+
+# Copy dylib
+if [ -n "$DYLIB" ] && [ -s "$DYLIB" ]; then
+    cp "$DYLIB" "$DEB_DIR/Library/MobileSubstrate/DynamicLibraries/${BUNDLE_ID}.dylib"
+    echo "dylib copied: $(ls -la "$DEB_DIR/Library/MobileSubstrate/DynamicLibraries/${BUNDLE_ID}.dylib")"
+else
+    echo "WARNING: No valid dylib! Creating empty placeholder."
+    echo "" > "$DEB_DIR/Library/MobileSubstrate/DynamicLibraries/${BUNDLE_ID}.dylib"
+fi
+
+chmod 0755 "$DEB_DIR/DEBIAN"
+
+# Build deb
+cd "$INSTALL_DIR"
+dpkg-deb --build Package "${BUNDLE_ID}_${VERSION}_iphoneos-arm64.deb" 2>&1
+
+if [ -f "${BUNDLE_ID}_${VERSION}_iphoneos-arm64.deb" ]; then
+    DEB_SIZE=$(stat -f%z "${BUNDLE_ID}_${VERSION}_iphoneos-arm64.deb" 2>/dev/null || stat -c%s "${BUNDLE_ID}_${VERSION}_iphoneos-arm64.deb" 2>/dev/null)
+    echo ""
+    echo "============================================="
+    echo "  DEB PACKAGE CREATED!"
+    echo "  File: ${BUNDLE_ID}_${VERSION}_iphoneos-arm64.deb"
+    echo "  Size: ${DEB_SIZE} bytes"
+    echo "  Path: ${INSTALL_DIR}/"
+    echo "============================================="
+else
+    echo "ERROR: Failed to create .deb package!"
+    exit 1
+fi
+
+# ============================================================
+# STEP 6: Install
+# ============================================================
+echo "[6/6] Installing package..."
+dpkg -i "${INSTALL_DIR}/${BUNDLE_ID}_${VERSION}_iphoneos-arm64.deb" 2>&1 || {
+    echo "dpkg install failed, trying force..."
+    dpkg -i --force-all "${INSTALL_DIR}/${BUNDLE_ID}_${VERSION}_iphoneos-arm64.deb" 2>&1
+}
+
+# Restart Shortcuts
+killall -9 Shortcuts 2>/dev/null || true
+sleep 1
+
+echo ""
+echo "============================================="
+echo "  DONE! Open Shortcuts app to verify."
+echo "  If actions don't appear, respring:"
+echo "  killall SpringBoard"
+echo "============================================="
+

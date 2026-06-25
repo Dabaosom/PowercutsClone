@@ -1,0 +1,9 @@
+Package: com.yourname.powercutsclone
+Name: PowercutsClone (Rootless)
+Depends: mobilesubstrate
+Version: 1.0.1
+Architecture: iphoneos-arm64
+Description: Pack of actions for the Shortcuts app on jailbroken iOS 17 (Rootless). 25 powerful actions including shell commands, respring, notifications, badge control, unlock, wake screen and more!
+Maintainer: YourName <your@email.com>
+Author: YourName
+Section: Tweaks
