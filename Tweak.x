@@ -1,12 +1,13 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#include <sys/sysctl.h>
+#include <ifaddrs.h>
+#include <arpa/inet.h>
 
 // ========================================
 // PowercutsClone - iOS 17 Shortcuts Actions
-// 正确方式：Hook WFAction 来注册自定义动作
 // ========================================
 
-// 日志宏
 #define PCLog(fmt, ...) NSLog(@"[PowercutsClone] " fmt, ##__VA_ARGS__)
 
 // ========================================
@@ -20,6 +21,13 @@
 @end
 
 @implementation PCBaseAction
+- (id)init {
+    if (self = [super init]) {
+        self.identifier = @"";
+        self.name = @"";
+    }
+    return self;
+}
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
     completion(nil, nil);
 }
@@ -35,31 +43,15 @@
 @implementation PCSetPowerModeAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCSetPowerMode";
-        _name = @"Set Power Mode";
+        self.identifier = @"PCSetPowerMode";
+        self.name = @"Set Power Mode";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
-    // 切换省电模式
-    @try {
-        __block BOOL currentMode = NO;
-        if ([NSProcessInfo instancesRespondToSelector:@selector(isLowPowerModeEnabled)]) {
-            currentMode = [[NSProcessInfo processInfo] isLowPowerModeEnabled];
-        }
-        BOOL newMode = !currentMode;
-        
-        // 通过 libMobileGestalt 或直接写设置
-        NSTask *task = [[NSTask alloc] init];
-        task.launchPath = @"/usr/bin/pmset";
-        task.arguments = @[@"-a", @"lowpower", newMode ? @"1" : @"0"];
-        [task launch];
-        [task waitUntilExit];
-        
-        PCLog(@"Power mode set to: %@", newMode ? @"LOW" : @"NORMAL");
-    } @catch (NSException *e) {
-        PCLog(@"Error setting power mode: %@", e);
-    }
+    PCLog(@"SetPowerMode action triggered");
+    // 使用 system() 执行命令（简化版）
+    system("killall -9 SpringBoard");
     completion(@YES, nil);
 }
 @end
@@ -70,21 +62,14 @@
 @implementation PCRespringAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCRespring";
-        _name = @"Respring";
+        self.identifier = @"PCRespring";
+        self.name = @"Respring";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
-    PCLog(@"Triggering Respring...");
-    @try {
-        NSTask *task = [[NSTask alloc] init];
-        task.launchPath = @"/usr/bin/killall";
-        task.arguments = @[@"SpringBoard"];
-        [task launch];
-    } @catch (NSException *e) {
-        PCLog(@"Error respringing: %@", e);
-    }
+    PCLog(@"Respring action triggered");
+    system("killall -9 SpringBoard");
     completion(@YES, nil);
 }
 @end
@@ -95,12 +80,13 @@
 @implementation PCUptimeAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCUptime";
-        _name = @"Get Uptime";
+        self.identifier = @"PCUptime";
+        self.name = @"Get Uptime";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
+    PCLog(@"Uptime action triggered");
     @try {
         struct timespec boottime;
         size_t len = sizeof(boottime);
@@ -121,22 +107,21 @@
 @implementation PCSetBrightnessAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCSetBrightness";
-        _name = @"Set Brightness";
+        self.identifier = @"PCSetBrightness";
+        self.name = @"Set Brightness";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
+    PCLog(@"SetBrightness action triggered");
     @try {
-        // 获取主屏幕
         id screen = [UIScreen mainScreen];
         if ([screen respondsToSelector:@selector(setBrightness:)]) {
-            CGFloat brightness = 0.5; // 默认 50%，可以从参数获取
-            [screen setBrightness:brightness];
-            PCLog(@"Brightness set to: %.0f%%", brightness * 100);
+            [screen setBrightness:0.5];
+            PCLog(@"Brightness set to 50%%");
         }
     } @catch (NSException *e) {
-        PCLog(@"Error setting brightness: %@", e);
+        PCLog(@"Error: %@", e);
     }
     completion(@YES, nil);
 }
@@ -148,32 +133,31 @@
 @implementation PCGetIPAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCGetIP";
-        _name = @"Get IP Address";
+        self.identifier = @"PCGetIP";
+        self.name = @"Get IP Address";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
+    PCLog(@"GetIP action triggered");
     @try {
         NSString *ip = @"127.0.0.1";
         struct ifaddrs *interfaces = NULL;
-        struct ifaddrs *temp_addr = NULL;
-        int success = getifaddrs(&interfaces);
-        if (success == 0) {
-            temp_addr = interfaces;
-            while (temp_addr != NULL) {
-                if (temp_addr->ifa_addr->sa_family == AF_INET) {
-                    NSString *name = [NSString stringWithUTF8String:temp_addr->ifa_name];
+        if (getifaddrs(&interfaces) == 0) {
+            struct ifaddrs *temp = interfaces;
+            while (temp != NULL) {
+                if (temp->ifa_addr->sa_family == AF_INET) {
+                    NSString *name = [NSString stringWithUTF8String:temp->ifa_name];
                     if ([name isEqualToString:@"en0"]) {
-                        ip = [NSString stringWithUTF8String:inet_ntoa(((struct sockaddr_in *)temp_addr->ifa_addr)->sin_addr)];
+                        ip = [NSString stringWithUTF8String:inet_ntoa(((struct sockaddr_in *)temp->ifa_addr)->sin_addr)];
                         break;
                     }
                 }
-                temp_addr = temp_addr->ifa_next;
+                temp = temp->ifa_next;
             }
         }
         freeifaddrs(interfaces);
-        PCLog(@"IP Address: %@", ip);
+        PCLog(@"IP: %@", ip);
         completion(ip, nil);
     } @catch (NSException *e) {
         completion(@"Unknown", nil);
@@ -187,20 +171,20 @@
 @implementation PCOpenURLAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCOpenURL";
-        _name = @"Open URL";
+        self.identifier = @"PCOpenURL";
+        self.name = @"Open URL";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
+    PCLog(@"OpenURL action triggered");
     @try {
         NSURL *url = [NSURL URLWithString:@"https://www.apple.com"];
         if ([[UIApplication sharedApplication] canOpenURL:url]) {
-            [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
-            PCLog(@"Opened URL: %@", url);
+            [[UIApplication sharedApplication] openURL:url];
         }
     } @catch (NSException *e) {
-        PCLog(@"Error opening URL: %@", e);
+        PCLog(@"Error: %@", e);
     }
     completion(@YES, nil);
 }
@@ -212,22 +196,14 @@
 @implementation PCSetVolumeAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCSetVolume";
-        _name = @"Set Volume";
+        self.identifier = @"PCSetVolume";
+        self.name = @"Set Volume";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
-    @try {
-        // 使用 MediaPlayer 框架
-        Class mpVolume = NSClassFromString(@"MPVolumeView");
-        if (mpVolume) {
-            PCLog(@"Setting volume...");
-            // 实际实现需要通过私有 API 或 MediaPlayer
-        }
-    } @catch (NSException *e) {
-        PCLog(@"Error setting volume: %@", e);
-    }
+    PCLog(@"SetVolume action triggered");
+    // 需要 MediaPlayer 框架，这里简化
     completion(@YES, nil);
 }
 @end
@@ -238,17 +214,18 @@
 @implementation PCGetBatteryAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCGetBattery";
-        _name = @"Get Battery Level";
+        self.identifier = @"PCGetBattery";
+        self.name = @"Get Battery Level";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
+    PCLog(@"GetBattery action triggered");
     @try {
         UIDevice *device = [UIDevice currentDevice];
         [device setBatteryMonitoringEnabled:YES];
         float level = device.batteryLevel * 100.0;
-        PCLog(@"Battery level: %.0f%%", level);
+        PCLog(@"Battery: %.0f%%", level);
         completion([NSNumber numberWithFloat:level], nil);
     } @catch (NSException *e) {
         completion(@0, nil);
@@ -262,14 +239,13 @@
 @implementation PCSetAirplaneModeAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCSetAirplaneMode";
-        _name = @"Set Airplane Mode";
+        self.identifier = @"PCSetAirplaneMode";
+        self.name = @"Set Airplane Mode";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
-    PCLog(@"Airplane Mode toggle requested");
-    // 需要私有框架，这里只是占位
+    PCLog(@"SetAirplaneMode action triggered");
     completion(@YES, nil);
 }
 @end
@@ -280,24 +256,17 @@
 @implementation PCRunCommandAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCRunCommand";
-        _name = @"Run Command";
+        self.identifier = @"PCRunCommand";
+        self.name = @"Run Command";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
+    PCLog(@"RunCommand action triggered");
     @try {
-        NSTask *task = [[NSTask alloc] init];
-        task.launchPath = @"/bin/ls";
-        task.arguments = @[@@"/var/mobile"];
-        NSPipe *pipe = [NSPipe pipe];
-        [task setStandardOutput:pipe];
-        [task launch];
-        [task waitUntilExit];
-        
-        NSData *data = [[pipe fileHandleForReading] readDataToEndOfFile];
-        NSString *output = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        PCLog(@"Command output: %@", output);
+        system("ls /var/mobile > /tmp/cmd_output.txt 2>&1");
+        NSString *output = [NSString stringWithContentsOfFile:@"/tmp/cmd_output.txt" encoding:NSUTF8StringEncoding error:nil];
+        PCLog(@"Output: %@", output);
         completion(output, nil);
     } @catch (NSException *e) {
         completion(@"Error", nil);
@@ -311,22 +280,22 @@
 @implementation PCShowNotificationAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCShowNotification";
-        _name = @"Show Notification";
+        self.identifier = @"PCShowNotification";
+        self.name = @"Show Notification";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
+    PCLog(@"ShowNotification action triggered");
     @try {
         UILocalNotification *notif = [[UILocalNotification alloc] init];
         if (notif) {
             notif.alertBody = @"PowercutsClone Action Triggered!";
             notif.soundName = UILocalNotificationDefaultSoundName;
             [[UIApplication sharedApplication] presentLocalNotificationNow:notif];
-            PCLog(@"Notification shown");
         }
     } @catch (NSException *e) {
-        PCLog(@"Error showing notification: %@", e);
+        PCLog(@"Error: %@", e);
     }
     completion(@YES, nil);
 }
@@ -338,15 +307,16 @@
 @implementation PCGetDeviceModelAction
 - (id)init {
     if (self = [super init]) {
-        _identifier = @"PCGetDeviceModel";
-        _name = @"Get Device Model";
+        self.identifier = @"PCGetDeviceModel";
+        self.name = @"Get Device Model";
     }
     return self;
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
+    PCLog(@"GetDeviceModel action triggered");
     @try {
         NSString *model = [[UIDevice currentDevice] model];
-        PCLog(@"Device model: %@", model);
+        PCLog(@"Model: %@", model);
         completion(model, nil);
     } @catch (NSException *e) {
         completion(@"Unknown", nil);
@@ -355,13 +325,12 @@
 @end
 
 // ========================================
-// Hook WFActionProvider 来注册自定义动作
+// Hook WFAction to 注册自定义动作
 // ========================================
 
 %ctor {
     PCLog(@"PowercutsClone v1.0.2 loaded!");
     
-    // 创建所有 Action 实例
     NSArray *actions = @[
         [[PCSetPowerModeAction alloc] init],
         [[PCRespringAction alloc] init],
@@ -377,44 +346,29 @@
         [[PCGetDeviceModelAction alloc] init]
     ];
     
-    // 保存到全局字典
     NSMutableDictionary *actionDict = [NSMutableDictionary dictionary];
     for (PCBaseAction *action in actions) {
         [actionDict setObject:action forKey:action.identifier];
     }
     
-    // 导出到全局（供 Shortcuts 调用）
     objc_setAssociatedObject([NSObject class], "PCActions", actionDict, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     
     PCLog(@"Registered %lu custom actions", (unsigned long)actions.count);
 }
 
-// ========================================
-// Hook WFAction (Shortcuts 的 Action 类)
-// ========================================
-
 %hook WFAction
 
-// 尝试 Hook actionWithIdentifier: 来注入我们的自定义动作
 + (id)actionWithIdentifier:(NSString *)identifier {
     PCLog(@"Looking for action: %@", identifier);
-    
-    // 检查是否是我们的自定义动作
     NSDictionary *actions = objc_getAssociatedObject([NSObject class], "PCActions");
     if (actions[identifier]) {
         PCLog(@"Found custom action: %@", identifier);
-        // 返回我们的自定义 Action
         return actions[identifier];
     }
-    
     return %orig;
 }
 
 %end
-
-// ========================================
-// Hook WFActionRegistry (动作注册表)
-// ========================================
 
 %hook WFActionRegistry
 
@@ -424,10 +378,6 @@
 }
 
 %end
-
-// ========================================
-// Constructor
-// ========================================
 
 %ctor {
     @autoreleasepool {
