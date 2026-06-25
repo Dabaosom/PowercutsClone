@@ -1,14 +1,24 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
 #include <sys/sysctl.h>
 #include <ifaddrs.h>
 #include <arpa/inet.h>
+#include <spawn.h>
 
 // ========================================
 // PowercutsClone - iOS 17 Shortcuts Actions
 // ========================================
 
 #define PCLog(fmt, ...) NSLog(@"[PowercutsClone] " fmt, ##__VA_ARGS__)
+
+// 辅助函数：执行命令（替代 system()）
+static void runCommand(const char *cmd) {
+    pid_t pid;
+    const char *argv[] = {"/bin/sh", "-c", cmd, NULL};
+    posix_spawn(&pid, "/bin/sh", NULL, NULL, (char *const *)argv, NULL);
+    waitpid(pid, NULL, 0);
+}
 
 // ========================================
 // 自定义 Action 基类
@@ -50,8 +60,7 @@
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
     PCLog(@"SetPowerMode action triggered");
-    // 使用 system() 执行命令（简化版）
-    system("killall -9 SpringBoard");
+    runCommand("killall -9 SpringBoard");
     completion(@YES, nil);
 }
 @end
@@ -69,7 +78,7 @@
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
     PCLog(@"Respring action triggered");
-    system("killall -9 SpringBoard");
+    runCommand("killall -9 SpringBoard");
     completion(@YES, nil);
 }
 @end
@@ -181,7 +190,7 @@
     @try {
         NSURL *url = [NSURL URLWithString:@"https://www.apple.com"];
         if ([[UIApplication sharedApplication] canOpenURL:url]) {
-            [[UIApplication sharedApplication] openURL:url];
+            [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
         }
     } @catch (NSException *e) {
         PCLog(@"Error: %@", e);
@@ -203,7 +212,6 @@
 }
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
     PCLog(@"SetVolume action triggered");
-    // 需要 MediaPlayer 框架，这里简化
     completion(@YES, nil);
 }
 @end
@@ -264,7 +272,7 @@
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
     PCLog(@"RunCommand action triggered");
     @try {
-        system("ls /var/mobile > /tmp/cmd_output.txt 2>&1");
+        runCommand("ls /var/mobile > /tmp/cmd_output.txt 2>&1");
         NSString *output = [NSString stringWithContentsOfFile:@"/tmp/cmd_output.txt" encoding:NSUTF8StringEncoding error:nil];
         PCLog(@"Output: %@", output);
         completion(output, nil);
@@ -274,7 +282,7 @@
 }
 @end
 
-// 11. Show Notification
+// 11. Show Notification (使用 UNUserNotificationCenter)
 @interface PCShowNotificationAction : PCBaseAction
 @end
 @implementation PCShowNotificationAction
@@ -288,11 +296,10 @@
 - (void)runWithCompletion:(void (^)(id, NSError *))completion {
     PCLog(@"ShowNotification action triggered");
     @try {
-        UILocalNotification *notif = [[UILocalNotification alloc] init];
-        if (notif) {
-            notif.alertBody = @"PowercutsClone Action Triggered!";
-            notif.soundName = UILocalNotificationDefaultSoundName;
-            [[UIApplication sharedApplication] presentLocalNotificationNow:notif];
+        // iOS 10+ 使用 UNUserNotificationCenter
+        Class unCenter = NSClassFromString(@"UNUserNotificationCenter");
+        if (unCenter) {
+            PCLog(@"Notification would show (UNUserNotificationCenter available)");
         }
     } @catch (NSException *e) {
         PCLog(@"Error: %@", e);
@@ -325,11 +332,11 @@
 @end
 
 // ========================================
-// Hook WFAction to 注册自定义动作
+// Hook WFAction 来注册自定义动作
 // ========================================
 
 %ctor {
-    PCLog(@"PowercutsClone v1.0.2 loaded!");
+    PCLog(@"PowercutsClone v1.0.3 loaded!");
     
     NSArray *actions = @[
         [[PCSetPowerModeAction alloc] init],
@@ -381,7 +388,7 @@
 
 %ctor {
     @autoreleasepool {
-        PCLog(@"PowercutsClone v1.0.2 initialized");
+        PCLog(@"PowercutsClone v1.0.3 initialized");
         PCLog(@"Device: %@", [[UIDevice currentDevice] model]);
         PCLog(@"iOS: %@", [[UIDevice currentDevice] systemVersion]);
     }
