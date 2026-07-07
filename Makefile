@@ -2,7 +2,7 @@ ARCHS = arm64
 TARGET := iphone:clang:latest:17.0
 PACKAGE_VERSION = 1.1.0
 
-# Rootless 越狱路径（Dopamine/Palera1n）
+# Rootless 越狱路径（Bootstrap/Dopamine/Palera1n）
 THEOS_PACKAGE_SCHEME = rootless
 
 # 本地测试时可以设置
