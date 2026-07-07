@@ -2,7 +2,7 @@ Package: com.yourname.powercutsclone
 Name: PowercutsClone
 Depends: mobilesubstrate
 Version: 1.1.0
-Architecture: iphoneos-arm64
+Architecture: iphoneos-arm64-rootless
 Description: iOS 17 Shortcuts Actions - Custom actions for Shortcuts app (Rootless)
 Maintainer: Dabaosom
 Author: Dabaosom
