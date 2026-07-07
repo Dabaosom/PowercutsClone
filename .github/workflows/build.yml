@@ -12,6 +12,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: |
+          brew install ldid
+
       - name: Install roothide theos (with submodules)
         run: |
           export THEOS=$HOME/theos
@@ -29,10 +33,11 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE
           make clean
-          make package PACKAGE_VERSION=1.1.${{ github.run_number }} 2>&1 | tail -20
+          make package PACKAGE_VERSION=1.1.${{ github.run_number }} 2>&1 | tail -30
 
       - name: Show build output
         run: |
+          ls -la packages/ 2>/dev/null || echo "No packages dir"
           ls -lh packages/*.deb 2>/dev/null || echo "No deb found"
 
       - name: Upload DEB artifact
